@@ -1,14 +1,13 @@
 
 import os
 os.environ["JAX_PLATFORM_NAME"] = "cpu"
-from jax.config import config
-config.update("jax_enable_x64", False)
 import datetime
 import numpy as np
 import lightgbm as lgb
 import jax.numpy as jnp
 from jax import vmap, jit, grad, random, jacobian
 import jax
+jax.config.update("jax_enable_x64", False)
 from jax import device_get, ops
 
 # custom loss function for light gbm
@@ -122,33 +121,37 @@ def stack_y(y, num_labels):
 
 if __name__ == '__main__':
 
+    # synthetic data for demonstration
+    np.random.seed(0)
+    x_train = np.random.randn(1000, 10).astype(np.float32)
+    y_train = np.random.randn(1000, 3).astype(np.float32)
+    x_test = np.random.randn(200, 10).astype(np.float32)
+    y_test = np.random.randn(200, 3).astype(np.float32)
+
     num_labels = y_train.shape[1]
 
     x_train_stack = stack_x(x_train, num_labels)
     y_train_stack = stack_y(y_train, num_labels)
     x_test_stack = stack_x(x_test, num_labels)
     y_test_stack = stack_y(y_test, num_labels)
-        
-    
+
     loss_obj = MultiVariateGaussianLoss(
-        num_labels = num_labels, 
-        y_train = y_train_stack
+        num_labels = num_labels,
+        y_train = y_train
         )
     model = lgb.LGBMModel(
-        # boosting_type='gbdt',
         objective=loss_obj.obj,
         num_iterations=1000,
         learning_rate=0.01,
-        # feature_fraction=0.8,
-        # min_sum_hessian_per_leaf=1e-6,
     )
 
     model.fit(
-        x_train_stack, 
+        x_train_stack,
         y_train_stack,
         eval_set=[(x_test_stack, y_test_stack)],
-        # eval_set=[(x_train_stack, y_train_stack)],
         eval_metric=loss_obj.loss,
-        early_stopping_rounds=100,
-        verbose=10,
+        callbacks=[lgb.early_stopping(100), lgb.log_evaluation(10)],
     )
+
+    mu, cov = loss_obj.convert_pred(model.predict(x_test_stack))
+    print("mu:", mu.shape, "cov:", cov.shape)

@@ -64,6 +64,8 @@ class MVGModel:
             loss = -llh
             return loss
         
+        self.loss_fn_row = loss_fn_row
+        
         # get loss function, gradient, and hessian (diagonal only) for each row
         # all with shape [self.num_pred_vars]
         grad_fn_row = grad(loss_fn_row, argnums = 1) # gradient with respect to y_pred_row
@@ -95,12 +97,12 @@ class MVGModel:
             return np.asarray(grad), np.asarray(hess)
         
         @jit
-        def loss_fn(y_true, y_pred):
-            return self.loss_fn(yp).mean()
+        def val_loss_fn(y_pred):
+            return vmap(self.loss_fn_row, in_axes = (0, 0))(y_val, y_pred).mean()
         
         def eval_fn(y_true, y_pred): # don't use y_true since it is dummy y
-            y_pred = jnp.reshape(y_pred, (y.shape[0], self.num_pred_vars), "F")
-            loss = loss_fn(y, y_pred)
+            y_pred = jnp.reshape(y_pred, (y_val.shape[0], self.num_pred_vars), "F")
+            loss = val_loss_fn(y_pred)
             return ("loss", np.asarray(loss), False)
         
         y_dummy = np.zeros((x.shape[0]))
@@ -112,9 +114,9 @@ class MVGModel:
         
         if x_val is not None and y_val is not None:
             self.model.fit(x, y_dummy, 
-                    eval_set = [(x_val, y_dummy)],
+                    eval_set = [(x_val, np.zeros((x_val.shape[0])))],
                     eval_metric = eval_fn,
-                    **self.model_kwargs)
+                    **kwargs)
         else:
             self.model.fit(x, y_dummy, 
                         #    eval_metric = eval_fn,
@@ -145,5 +147,9 @@ if __name__ == '__main__':
     y = np.random.randn(num_rows, num_labels)
     
     # fit model
-    model = MVGModel(num_labels)
-    model.fit(x, y)
+    model = MVGModel(num_labels, n_estimators = 100, verbose = -1)
+    model.fit(x[:8000], y[:8000], x_val = x[8000:], y_val = y[8000:],
+              callbacks = [lgb.log_evaluation(10)])
+    
+    mu, cov = model.predict(x[8000:])
+    print("mu:", mu.shape, "cov:", cov.shape)

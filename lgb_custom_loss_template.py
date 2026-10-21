@@ -1,13 +1,12 @@
 
 import os
 os.environ["JAX_PLATFORM_NAME"] = "cpu"
-from jax.config import config
-config.update("jax_enable_x64", False)
 import numpy as np
 import lightgbm as lgb
 import jax.numpy as jnp
 from jax import vmap, jit, grad, jacobian, device_get
 import jax
+jax.config.update("jax_enable_x64", False)
 
 
 class LGBCustomLoss:
